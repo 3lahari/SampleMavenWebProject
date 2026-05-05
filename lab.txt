@@ -1,0 +1,152 @@
+//lambda 7.1
+/s3-dynamodb
+/s3-lambda
+import boto3
+from uuid import uuid4
+
+def lambda_handler(event, context):
+    dynamodb = boto3.resource('dynamodb')
+    dynamoTable = dynamodb.Table('table_lambda7')  # updated table name
+
+    if 'Records' in event:
+        for record in event['Records']:
+            bucket_name = record['s3']['bucket']['name']
+
+            # Ensure it processes only your bucket
+            if bucket_name != 'bucket-lambda7':
+                continue
+
+            object_key = record['s3']['object']['key']
+            size = record['s3']['object'].get('size', -1)
+            event_name = record['eventName']
+            event_time = record['eventTime']
+
+            dynamoTable.put_item(
+                Item={
+                    '7_k1': str(uuid4()),  # REQUIRED key (must match table)
+                    'Bucket': bucket_name,
+                    'Object': object_key,
+                    'Size': size,
+                    'Event': event_name,
+                    'EventTime': event_time
+                }
+            )
+    else:
+        print("No S3 event received")
+
+    return {
+        "statusCode": 200,
+        "body": "Data stored in DynamoDB"
+    }
+
+
+
+
+
+//sns-sqs-s3-lambda
+import json
+
+def lambda_handler(event, context):
+    print("Lambda triggered by SQS")
+
+    for record in event['Records']:
+        print("---- New Message ----")
+        
+        # SQS message body (comes from SNS)
+        body = record['body']
+        print("Raw SQS Body:", body)
+
+        # SNS wraps the message → unwrap it
+        sns_message = json.loads(body)
+        print("SNS Message:", sns_message)
+
+        # Actual S3 event is inside 'Message'
+        s3_event = json.loads(sns_message['Message'])
+        print("S3 Event:", s3_event)
+
+        # Extract useful info
+        for rec in s3_event['Records']:
+            bucket = rec['s3']['bucket']['name']
+            key = rec['s3']['object']['key']
+
+            print(f"File uploaded → Bucket: {bucket}, Key: {key}")
+
+    return {
+        'statusCode': 200,
+        'body': 'Processed successfully'
+    }
+
+//8_ sns access policy
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowS3Publish",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "s3.amazonaws.com"
+      },
+      "Action": "SNS:Publish",
+      "Resource": "arn:aws:sns:us-east-1:959284967674:MyEmailTopic_8",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceAccount": "959284967674"
+        },
+        "ArnLike": {
+          "aws:SourceArn": "arn:aws:s3:::bucket-sns8"
+        }
+      }
+    }
+  ]
+}
+
+
+//8-sqs-access policy
+{
+  "Version": "2012-10-17",
+  "Id": "__default_policy_ID",
+  "Statement": [
+    {
+      "Sid": "__owner_statement",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::959284967674:root"
+      },
+      "Action": "SQS:*",
+      "Resource": "arn:aws:sqs:us-east-1:959284967674:queue_8"
+    },
+    {
+      "Sid": "topic-subscription-arn:aws:sns:us-east-1:959284967674:MyEmailTopic_8",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "sns.amazonaws.com"
+      },
+      "Action": "SQS:SendMessage",
+      "Resource": "arn:aws:sqs:us-east-1:959284967674:queue_8",
+      "Condition": {
+        "ArnLike": {
+          "aws:SourceArn": "arn:aws:sns:us-east-1:959284967674:MyEmailTopic_8"
+        }
+      }
+    }
+  ]
+}
+
+"""
+replace lamda? 
+def lambda_handler(event, context):
+ for record in event['Records']:
+ print("Message received from SQS:")
+ print(record['body'])
+ return {
+ 'statusCode': 200,
+ 'body': 'Message processed successfully'
+ } 
+"""
+
+
+
+//IAM
+aws ec2 describe-instances 
+Run aws s3 ls 
+aws s3 mb s3://your-unique-bucket-name
